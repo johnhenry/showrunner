@@ -10,6 +10,7 @@ from showrunner.formats.base import Format
 from showrunner.formats.faceless_explainer.assets import (
     generate_all_narrations,
     generate_all_scene_code,
+    generate_scene_images,
 )
 from showrunner.formats.faceless_explainer.composer import generate_root_tsx
 from showrunner.formats.faceless_explainer.planner import generate_plan
@@ -43,6 +44,16 @@ class FacelessExplainerFormat(Format):
         voice = getattr(self, "_voice", "af_heart")
         speed = getattr(self, "_speed", 1.0)
         parallel = getattr(self, "_parallel", False)
+        with_images = getattr(self, "_with_images", False)
+
+        # Generate scene background images if requested
+        scene_images = {}
+        if with_images and "image" in providers:
+            images_dir = work_dir / "public" / "images"
+            scene_images = generate_scene_images(
+                plan, image=providers["image"], output_dir=images_dir,
+                width=width, height=height, parallel=parallel,
+            )
 
         # TTS
         audio_dir = work_dir / "public" / "audio"
@@ -66,9 +77,14 @@ class FacelessExplainerFormat(Format):
             plan=plan, style_context=style_context, llm=llm,
             write_fn=write_fn, validate_fn=validate_fn,
             width=width, height=height, parallel=parallel,
+            scene_images=scene_images,
         )
 
-        return {"durations": durations, "has_audio": True, "width": width, "height": height}
+        return {
+            "durations": durations, "has_audio": True,
+            "width": width, "height": height,
+            "scene_images": scene_images,
+        }
 
     def compose(self, plan: Plan, assets: dict, work_dir: Path, **kwargs) -> None:
         width = assets.get("width", 1080)

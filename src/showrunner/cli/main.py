@@ -55,6 +55,7 @@ def cli():
     help="Output format for illustrated: pdf, png sequence, or both",
 )
 @click.option("--panels-per-page", type=int, default=4, help="Panels per page in panel layout")
+@click.option("--with-images", is_flag=True, help="Generate AI images as scene backgrounds (requires image provider)")
 def create(
     topic,
     topic_file,
@@ -80,6 +81,7 @@ def create(
     text_overlay,
     image_output,
     panels_per_page,
+    with_images,
 ):
     """Create a video from a topic."""
     from showrunner.config import load_config
@@ -130,6 +132,7 @@ def create(
         text_overlay=text_overlay,
         image_output=image_output,
         panels_per_page=panels_per_page,
+        with_images=with_images,
     )
 
     if dry_run:
