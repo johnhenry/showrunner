@@ -41,6 +41,22 @@ def cli():
 @click.option("--storyboard", type=click.Path(exists=True), help="Load existing storyboard JSON")
 @click.option("--regen-scene", default=None, help="Regenerate a specific scene")
 @click.option("--render-only", is_flag=True, help="Render from existing scenes")
+@click.option(
+    "--layout",
+    type=click.Choice(["single", "panels"]),
+    default="single",
+    help="Image layout: single image per scene or multi-panel pages",
+)
+@click.option("--text-overlay", is_flag=True, help="Overlay narration text on images")
+@click.option(
+    "--image-output",
+    type=click.Choice(["pdf", "png", "both"]),
+    default="pdf",
+    help="Output format for illustrated: pdf, png sequence, or both",
+)
+@click.option("--panels-per-page", type=int, default=4, help="Panels per page in panel layout")
+@click.option("--with-images", is_flag=True, help="Generate AI images as scene backgrounds (requires image provider)")
+@click.option("--images", "images_dir", type=click.Path(exists=True), help="Directory of images to use as scene backgrounds")
 def create(
     topic,
     topic_file,
@@ -62,6 +78,12 @@ def create(
     storyboard,
     regen_scene,
     render_only,
+    layout,
+    text_overlay,
+    image_output,
+    panels_per_page,
+    with_images,
+    images_dir,
 ):
     """Create a video from a topic."""
     from showrunner.config import load_config
@@ -108,15 +130,21 @@ def create(
         no_audio=no_audio,
         dry_run=dry_run,
         preview=preview,
+        layout=layout,
+        text_overlay=text_overlay,
+        image_output=image_output,
+        panels_per_page=panels_per_page,
+        with_images=with_images,
+        images_dir=Path(images_dir) if images_dir else None,
     )
 
     if dry_run:
         click.echo(f"\nDry run complete. Plan: {result.title}")
         click.echo(result.to_json())
     elif preview:
-        click.echo("\nRemortion Studio opened for preview.")
+        click.echo("\nPreview opened.")
     else:
-        click.echo(f"\nVideo rendered: {result}")
+        click.echo(f"\nOutput: {result}")
 
 
 @cli.command()

@@ -36,6 +36,13 @@ class Pipeline:
         no_audio: bool = False,
         dry_run: bool = False,
         preview: bool = False,
+        layout: str = "single",
+        text_overlay: bool = False,
+        image_output: str = "pdf",
+        panels_per_page: int = 4,
+        page_size: tuple[int, int] = (1200, 1600),
+        with_images: bool = False,
+        images_dir: Path | None = None,
     ) -> Path | Plan:
         """Run the full pipeline."""
         registry = get_registry()
@@ -44,12 +51,29 @@ class Pipeline:
         style_name = style or self.config.default_style
         resolved_style = resolve_style(style_name, overrides=style_override)
 
+        # Determine render provider — illustrated format uses pillow by default
+        is_illustrated = self.format_name == "illustrated"
+        default_render = "pillow" if is_illustrated else "remotion"
+        render_name = self.config.providers.get("render", default_render)
+        if is_illustrated and render_name in ("remotion", "ffmpeg"):
+            render_name = "pillow"
+
+        # Resolve image provider — needed for illustrated format or --with-images
+        image_name = self.config.providers.get("image")
+        if with_images and not images_dir and not image_name:
+            raise ValueError(
+                "Image provider required for --with-images without --images. "
+                "Set providers.image in .showrunner.yaml (openai, gemini, or ollama)"
+            )
+
         providers = self._create_providers(
             llm_name=self.config.providers.get("llm", "anthropic"),
             tts_name=self.config.providers.get("tts", "kokoro"),
-            render_name=self.config.providers.get("render", "remotion"),
+            render_name=render_name,
             provider_config=self.config.provider_config,
             video_name=self.config.providers.get("video"),
+            image_name=image_name,
+            image_output=image_output,
         )
 
         # Set format options
@@ -58,6 +82,12 @@ class Pipeline:
         fmt._voice = voice
         fmt._speed = speed
         fmt._parallel = parallel
+        fmt._layout = layout
+        fmt._text_overlay = text_overlay
+        fmt._panels_per_page = panels_per_page
+        fmt._page_size = page_size
+        fmt._with_images = with_images or images_dir is not None
+        fmt._images_dir = images_dir
 
         # Plan
         plan = fmt.plan(topic, resolved_style, self.config, providers["llm"])
@@ -84,14 +114,16 @@ class Pipeline:
 
         # Render
         if output_path is None:
-            output_path = Path.cwd() / "output" / f"{_slugify(plan.title)}.mp4"
+            ext = ".pdf" if is_illustrated else ".mp4"
+            output_path = Path.cwd() / "output" / f"{_slugify(plan.title)}{ext}"
 
         result = providers["render"].render(work_dir=work_dir, output_path=output_path)
         return result
 
     def _create_providers(
         self, llm_name: str, tts_name: str, render_name: str, provider_config: dict,
-        video_name: str | None = None,
+        video_name: str | None = None, image_name: str | None = None,
+        image_output: str = "pdf",
     ) -> dict:
         providers = {}
 
@@ -130,8 +162,41 @@ class Pipeline:
             from showrunner.providers.render.ffmpeg import FFmpegRenderProvider
 
             providers["render"] = FFmpegRenderProvider()
+        elif render_name == "pillow":
+            from showrunner.providers.render.pillow import PillowRenderProvider
+
+            providers["render"] = PillowRenderProvider(output_format=image_output)
         else:
             raise ValueError(f"Unknown render provider: {render_name}")
+
+        if image_name:
+            if image_name == "openai":
+                from showrunner.providers.image.openai import OpenAIImageProvider
+
+                cfg = provider_config.get("openai", {})
+                providers["image"] = OpenAIImageProvider(
+                    api_key=cfg.get("api_key"),
+                    model=cfg.get("image_model", "gpt-image-1"),
+                    quality=cfg.get("image_quality", "auto"),
+                )
+            elif image_name == "gemini":
+                from showrunner.providers.image.gemini import GeminiImageProvider
+
+                cfg = provider_config.get("gemini", {})
+                providers["image"] = GeminiImageProvider(
+                    api_key=cfg.get("api_key"),
+                    model=cfg.get("image_model", "imagen-3.0-generate-002"),
+                )
+            elif image_name == "ollama":
+                from showrunner.providers.image.ollama import OllamaImageProvider
+
+                cfg = provider_config.get("ollama", {})
+                providers["image"] = OllamaImageProvider(
+                    model=cfg.get("image_model", "x/z-image-turbo"),
+                    host=cfg.get("host"),
+                )
+            else:
+                raise ValueError(f"Unknown image provider: {image_name}")
 
         if video_name:
             if video_name == "minimax":

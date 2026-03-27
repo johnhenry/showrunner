@@ -33,12 +33,47 @@ showrunner create "The history of the internet" \
   --watermark "@mychannel"
 ```
 
+### With AI-generated images
+
+Generate background images for each scene using an image provider:
+
+```bash
+showrunner create "The solar system" --with-images
+```
+
+### With your own images
+
+Point to a directory of images to use as scene backgrounds:
+
+```bash
+showrunner create "Product tour" --images ./assets/
+```
+
+Images match to scenes by filename (e.g. `hook.png` → scene `hook`) or by sort order. Combine both flags to AI-generate images only for scenes without a matching user image:
+
+```bash
+showrunner create "Product tour" --images ./assets/ --with-images
+```
+
+### Generate still images (PDF/PNG)
+
+```bash
+# Single image per scene → PDF
+showrunner create "History of jazz" --format illustrated
+
+# Multi-panel pages with captions
+showrunner create "Ocean life" --format illustrated --layout panels --text-overlay
+
+# PNG sequence output
+showrunner create "Solar system" --format illustrated --image-output png
+```
+
 ### Available commands
 
 ```bash
 showrunner create "topic"     # Generate a video
 showrunner styles             # List style presets
-showrunner formats            # List video formats
+showrunner formats            # List output formats
 showrunner voices             # List TTS voices
 showrunner providers          # Show configured providers
 showrunner init               # Create config file
@@ -56,9 +91,14 @@ providers:
   llm: anthropic
   tts: kokoro
   render: remotion
+  image: openai          # for --with-images or illustrated format
 
 anthropic:
   model: claude-sonnet-4-5-20250929
+
+openai:
+  image_model: gpt-image-1   # or dall-e-3
+  image_quality: auto
 
 kokoro:
   voice: af_heart
@@ -158,8 +198,19 @@ showrunner create "topic" --format my-format
 - **kokoro** (default) — Free local TTS (82M params, Apache 2.0)
 - **elevenlabs** — Cloud TTS (paid API)
 
+### Image
+- **openai** — gpt-image-1 / DALL-E 3
+- **gemini** — Google Imagen 3
+- **ollama** — Local image generation (Z-Image Turbo, FLUX.2; macOS only currently)
+
+### Video
+- **gemini** — Google Veo 3.1
+- **minimax** — Minimax video generation API
+
 ### Render
 - **remotion** (default) — React-based programmatic video
+- **ffmpeg** — Video clip concatenation with audio mixing
+- **pillow** — Still image assembly to PDF/PNG (used by `illustrated` format)
 
 ## License
 

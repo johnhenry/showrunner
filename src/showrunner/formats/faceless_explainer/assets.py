@@ -1,4 +1,4 @@
-"""Asset generation: scene code (TSX) + TTS narration."""
+"""Asset generation: scene code (TSX) + TTS narration + optional images."""
 
 from __future__ import annotations
 
@@ -46,6 +46,31 @@ STYLE CONTEXT:
 
 Return ONLY the TSX code inside a single code fence. No explanations."""
 
+CODEGEN_IMAGE_ADDENDUM = """
+SCENE IMAGE AVAILABLE:
+An image is available for this scene at: staticFile("images/{image_filename}")
+Use Remotion's Img component to reference it: <Img src={{staticFile("images/{image_filename}")}} />
+
+The "Visual description" below tells you HOW to use this image in the scene.
+Follow those instructions for placement, sizing, animation, and compositing.
+
+Common patterns you can use:
+- Full-bleed background: position absolute, top/left 0, width/height 100%, objectFit "cover"
+- Inset/thumbnail: fixed size, positioned in a corner or region of the canvas
+- Ken Burns: animate transform scale from 1.0 to 1.05 over the scene duration
+- Reveal: animate clip-path or opacity to reveal the image progressively
+- Side-by-side: image on one half, text/graphics on the other
+
+If the visual description does NOT specify how to use the image, default to:
+- Full-bleed background with objectFit "cover"
+- Semi-transparent dark overlay (rgba(0,0,0,0.5)) for text readability
+- Subtle Ken Burns zoom (scale 1.0 → 1.05)
+
+IMPORTANT:
+- Do NOT generate procedural backgrounds when an image is available — use the image
+- Ensure strong contrast for any text overlaid on the image (text shadows, backdrop panels)
+"""
+
 CODEGEN_USER_TEMPLATE = """Create a Remotion scene component.
 
 Scene ID: {scene_id}
@@ -75,6 +100,7 @@ def generate_scene_code(
     height: int = 1920,
     fps: int = 30,
     quiet: bool = False,
+    image_filename: str | None = None,
 ) -> str:
     """Generate and validate TSX code for a single scene. Retries on failure."""
     component_name = "".join(w.capitalize() for w in scene.id.split("_"))
@@ -85,6 +111,9 @@ def generate_scene_code(
         duration_frames=duration_frames, duration=scene.duration,
         style_context=style_context,
     )
+
+    if image_filename:
+        system += CODEGEN_IMAGE_ADDENDUM.format(image_filename=image_filename)
 
     prompt = CODEGEN_USER_TEMPLATE.format(
         scene_id=scene.id,
@@ -134,36 +163,45 @@ def generate_all_scene_code(
     height: int = 1920,
     fps: int = 30,
     parallel: bool = False,
+    scene_images: dict[str, Path] | None = None,
 ) -> None:
     """Generate TSX code for all scenes."""
     total = len(plan.scenes)
+    scene_images = scene_images or {}
 
     if parallel:
         _generate_parallel(
             plan=plan, style_context=style_context, llm=llm,
             write_fn=write_fn, validate_fn=validate_fn,
             width=width, height=height, fps=fps, total=total,
+            scene_images=scene_images,
         )
     else:
         for i, scene in enumerate(plan.scenes, 1):
-            print(f"  [{i}/{total}] Generating {scene.id}...")
+            img_path = scene_images.get(scene.id)
+            img_filename = img_path.name if img_path else None
+            print(f"  [{i}/{total}] Generating {scene.id}{'  (with image)' if img_filename else ''}...")
             code = generate_scene_code(
                 scene=scene, style_context=style_context, llm=llm,
                 validate_fn=validate_fn, width=width, height=height, fps=fps,
+                image_filename=img_filename,
             )
             write_fn(scene.id, code)
 
 
-def _generate_parallel(*, plan, style_context, llm, write_fn, validate_fn, width, height, fps, total):
+def _generate_parallel(*, plan, style_context, llm, write_fn, validate_fn, width, height, fps, total, scene_images):
     errors = []
     with ThreadPoolExecutor(max_workers=min(4, total)) as pool:
         futures = {}
         for i, scene in enumerate(plan.scenes, 1):
+            img_path = scene_images.get(scene.id)
+            img_filename = img_path.name if img_path else None
             future = pool.submit(
                 _generate_and_write,
                 scene=scene, style_context=style_context, llm=llm,
                 write_fn=write_fn, validate_fn=validate_fn,
                 width=width, height=height, fps=fps, index=i, total=total,
+                image_filename=img_filename,
             )
             futures[future] = scene
         for future in as_completed(futures):
@@ -175,13 +213,75 @@ def _generate_parallel(*, plan, style_context, llm, write_fn, validate_fn, width
         raise RuntimeError(f"{len(errors)} scene(s) failed:\n" + "\n".join(errors))
 
 
-def _generate_and_write(*, scene, style_context, llm, write_fn, validate_fn, width, height, fps, index, total):
+def _generate_and_write(*, scene, style_context, llm, write_fn, validate_fn, width, height, fps, index, total, image_filename=None):
     code = generate_scene_code(
         scene=scene, style_context=style_context, llm=llm,
         validate_fn=validate_fn, width=width, height=height, fps=fps, quiet=True,
+        image_filename=image_filename,
     )
     write_fn(scene.id, code)
     print(f"  [{index}/{total}] {scene.id} done")
+
+
+def generate_scene_images(
+    plan: Plan,
+    *,
+    image: object,
+    output_dir: Path,
+    width: int = 1080,
+    height: int = 1920,
+    parallel: bool = False,
+) -> dict[str, Path]:
+    """Generate background images for all scenes. Returns {scene_id: image_path}."""
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    total = len(plan.scenes)
+    size = f"{width}x{height}"
+
+    # Map to aspect ratio string for providers that use it
+    ratio = "9:16" if height > width else "16:9" if width > height else "1:1"
+
+    if parallel:
+        return _generate_images_parallel(
+            plan, image=image, output_dir=output_dir,
+            size=size, aspect_ratio=ratio, total=total,
+        )
+
+    images = {}
+    for i, scene in enumerate(plan.scenes, 1):
+        print(f"  [{i}/{total}] Generating image: {scene.id}...")
+        img_path = output_dir / f"{scene.id}.png"
+        image.generate(
+            scene.visual,
+            size=size, aspect_ratio=ratio, output_path=img_path,
+        )
+        images[scene.id] = img_path
+    return images
+
+
+def _generate_images_parallel(plan, *, image, output_dir, size, aspect_ratio, total):
+    images = {}
+    errors = []
+    with ThreadPoolExecutor(max_workers=min(3, total)) as pool:
+        futures = {}
+        for i, scene in enumerate(plan.scenes, 1):
+            img_path = output_dir / f"{scene.id}.png"
+            future = pool.submit(
+                image.generate, scene.visual,
+                size=size, aspect_ratio=aspect_ratio, output_path=img_path,
+            )
+            futures[future] = (scene, img_path, i)
+        for future in as_completed(futures):
+            scene, img_path, index = futures[future]
+            try:
+                future.result()
+                images[scene.id] = img_path
+                print(f"  [{index}/{total}] {scene.id} image done")
+            except Exception as e:
+                errors.append(f"{scene.id}: {e}")
+    if errors:
+        raise RuntimeError(f"{len(errors)} image(s) failed:\n" + "\n".join(errors))
+    return images
 
 
 def generate_all_narrations(

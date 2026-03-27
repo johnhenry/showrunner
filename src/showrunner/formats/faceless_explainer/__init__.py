@@ -10,6 +10,7 @@ from showrunner.formats.base import Format
 from showrunner.formats.faceless_explainer.assets import (
     generate_all_narrations,
     generate_all_scene_code,
+    generate_scene_images,
 )
 from showrunner.formats.faceless_explainer.composer import generate_root_tsx
 from showrunner.formats.faceless_explainer.planner import generate_plan
@@ -43,6 +44,31 @@ class FacelessExplainerFormat(Format):
         voice = getattr(self, "_voice", "af_heart")
         speed = getattr(self, "_speed", 1.0)
         parallel = getattr(self, "_parallel", False)
+        with_images = getattr(self, "_with_images", False)
+
+        # Load user-provided images and/or generate AI images
+        scene_images = {}
+        user_images_dir = getattr(self, "_images_dir", None)
+        public_images_dir = work_dir / "public" / "images"
+
+        if user_images_dir:
+            from showrunner.images import load_user_images
+            scene_images = load_user_images(user_images_dir, plan, public_images_dir)
+            matched = len(scene_images)
+            total = len(plan.scenes)
+            print(f"  Matched {matched}/{total} scenes to user images")
+
+        if with_images and "image" in providers:
+            # AI-generate images for scenes that don't already have one
+            unmatched = [s for s in plan.scenes if s.id not in scene_images]
+            if unmatched:
+                from showrunner.plan import Plan as _Plan
+                sub_plan = _Plan(title=plan.title, total_duration=0, scenes=unmatched)
+                ai_images = generate_scene_images(
+                    sub_plan, image=providers["image"], output_dir=public_images_dir,
+                    width=width, height=height, parallel=parallel,
+                )
+                scene_images.update(ai_images)
 
         # TTS
         audio_dir = work_dir / "public" / "audio"
@@ -66,9 +92,14 @@ class FacelessExplainerFormat(Format):
             plan=plan, style_context=style_context, llm=llm,
             write_fn=write_fn, validate_fn=validate_fn,
             width=width, height=height, parallel=parallel,
+            scene_images=scene_images,
         )
 
-        return {"durations": durations, "has_audio": True, "width": width, "height": height}
+        return {
+            "durations": durations, "has_audio": True,
+            "width": width, "height": height,
+            "scene_images": scene_images,
+        }
 
     def compose(self, plan: Plan, assets: dict, work_dir: Path, **kwargs) -> None:
         width = assets.get("width", 1080)
