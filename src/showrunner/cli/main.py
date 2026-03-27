@@ -56,6 +56,7 @@ def cli():
 )
 @click.option("--panels-per-page", type=int, default=4, help="Panels per page in panel layout")
 @click.option("--with-images", is_flag=True, help="Generate AI images as scene backgrounds (requires image provider)")
+@click.option("--images", "images_dir", type=click.Path(exists=True), help="Directory of images to use as scene backgrounds")
 def create(
     topic,
     topic_file,
@@ -82,6 +83,7 @@ def create(
     image_output,
     panels_per_page,
     with_images,
+    images_dir,
 ):
     """Create a video from a topic."""
     from showrunner.config import load_config
@@ -133,6 +135,7 @@ def create(
         image_output=image_output,
         panels_per_page=panels_per_page,
         with_images=with_images,
+        images_dir=Path(images_dir) if images_dir else None,
     )
 
     if dry_run:

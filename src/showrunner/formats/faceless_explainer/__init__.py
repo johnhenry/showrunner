@@ -46,14 +46,29 @@ class FacelessExplainerFormat(Format):
         parallel = getattr(self, "_parallel", False)
         with_images = getattr(self, "_with_images", False)
 
-        # Generate scene background images if requested
+        # Load user-provided images and/or generate AI images
         scene_images = {}
+        user_images_dir = getattr(self, "_images_dir", None)
+        public_images_dir = work_dir / "public" / "images"
+
+        if user_images_dir:
+            from showrunner.images import load_user_images
+            scene_images = load_user_images(user_images_dir, plan, public_images_dir)
+            matched = len(scene_images)
+            total = len(plan.scenes)
+            print(f"  Matched {matched}/{total} scenes to user images")
+
         if with_images and "image" in providers:
-            images_dir = work_dir / "public" / "images"
-            scene_images = generate_scene_images(
-                plan, image=providers["image"], output_dir=images_dir,
-                width=width, height=height, parallel=parallel,
-            )
+            # AI-generate images for scenes that don't already have one
+            unmatched = [s for s in plan.scenes if s.id not in scene_images]
+            if unmatched:
+                from showrunner.plan import Plan as _Plan
+                sub_plan = _Plan(title=plan.title, total_duration=0, scenes=unmatched)
+                ai_images = generate_scene_images(
+                    sub_plan, image=providers["image"], output_dir=public_images_dir,
+                    width=width, height=height, parallel=parallel,
+                )
+                scene_images.update(ai_images)
 
         # TTS
         audio_dir = work_dir / "public" / "audio"

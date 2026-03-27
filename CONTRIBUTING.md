@@ -37,14 +37,17 @@ Tests mock all external APIs (Anthropic, Google, Minimax, etc.). No API keys nee
 src/showrunner/
 ├── pipeline.py          # Core orchestrator
 ├── plan.py              # Data models (Plan, Scene)
-├── formats/             # Video format plugins
-│   ├── faceless_explainer/  # Remotion + React
-│   └── ai_video/            # AI video clips + FFmpeg
+├── images.py            # User-provided image matching + loading
+├── formats/             # Output format plugins
+│   ├── faceless_explainer/  # Remotion + React (supports --with-images)
+│   ├── ai_video/            # AI video clips + FFmpeg
+│   └── illustrated/         # Still images → PDF/PNG
 ├── providers/           # Pluggable backends
 │   ├── llm/             # Language models (anthropic, openai)
 │   ├── tts/             # Text-to-speech (kokoro, elevenlabs)
+│   ├── image/           # Image generation (openai, gemini, ollama)
 │   ├── video/           # Video generation (gemini, minimax)
-│   └── render/          # Video rendering (remotion, ffmpeg)
+│   └── render/          # Output rendering (remotion, ffmpeg, pillow)
 ├── styles/              # Style presets
 └── cli/                 # Click CLI
 ```
@@ -94,6 +97,7 @@ Use conventional prefixes:
 
 ## What We're Looking For
 
+- New image providers (Stable Diffusion, Midjourney, etc.)
 - New video providers (Runway, Kling, Pika, etc.)
 - New TTS providers
 - New format plugins

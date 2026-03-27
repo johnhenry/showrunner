@@ -17,7 +17,14 @@ def test_image_addendum_references_staticfile():
     """The image prompt addendum tells the LLM to use staticFile."""
     rendered = CODEGEN_IMAGE_ADDENDUM.format(image_filename="hook.png")
     assert 'staticFile("images/hook.png")' in rendered
-    assert "background" in rendered.lower()
+    assert "Img" in rendered
+
+
+def test_image_addendum_defers_to_visual():
+    """The addendum should tell the LLM to follow visual description for placement."""
+    rendered = CODEGEN_IMAGE_ADDENDUM.format(image_filename="hook.png")
+    assert "visual description" in rendered.lower()
+    assert "default to" in rendered.lower()  # has a fallback
 
 
 def test_codegen_with_image_filename():
@@ -220,4 +227,86 @@ def test_format_generate_assets_without_images(tmp_path):
     assert assets["scene_images"] == {}
     # TSX prompt should NOT have image instructions
     system_prompt = mock_llm.generate.call_args.kwargs.get("system") or mock_llm.generate.call_args.args[0]
-    assert "BACKGROUND IMAGE" not in system_prompt
+    assert "SCENE IMAGE AVAILABLE" not in system_prompt
+
+
+def _touch_image(path, content=b"fake-image"):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+
+
+def test_format_with_user_images_dir(tmp_path):
+    """User-provided images are loaded and passed to codegen."""
+    fmt = FacelessExplainerFormat()
+    fmt._aspect_ratio = "9:16"
+    fmt._voice = "af_heart"
+    fmt._speed = 1.0
+    fmt._parallel = False
+    fmt._with_images = True
+
+    # Create user images
+    user_dir = tmp_path / "user_images"
+    _touch_image(user_dir / "hook.png")
+    fmt._images_dir = user_dir
+
+    plan = Plan(
+        title="Test", total_duration=5,
+        scenes=[Scene(id="hook", duration=5, narration="Hello", visual="A sunset")],
+    )
+
+    mock_llm = MagicMock()
+    mock_llm.generate.return_value = '```tsx\nexport default function Hook() { return <div />; }\n```'
+    mock_tts = MagicMock()
+    mock_tts.synthesize.return_value = MagicMock(duration=3.0)
+
+    (tmp_path / "work" / "public" / "audio").mkdir(parents=True)
+    (tmp_path / "work" / "src" / "scenes").mkdir(parents=True)
+
+    # No image provider needed — user images are sufficient
+    providers = {"llm": mock_llm, "tts": mock_tts}
+    assets = fmt.generate_assets(plan, providers, tmp_path / "work")
+
+    assert "hook" in assets["scene_images"]
+    # TSX was generated with image context
+    system_prompt = mock_llm.generate.call_args.kwargs.get("system") or mock_llm.generate.call_args.args[0]
+    assert "hook.png" in system_prompt
+
+
+def test_format_mixed_user_and_ai_images(tmp_path):
+    """User images for some scenes, AI-generated for the rest."""
+    fmt = FacelessExplainerFormat()
+    fmt._aspect_ratio = "9:16"
+    fmt._voice = "af_heart"
+    fmt._speed = 1.0
+    fmt._parallel = False
+    fmt._with_images = True
+
+    user_dir = tmp_path / "user_images"
+    _touch_image(user_dir / "hook.png")
+    fmt._images_dir = user_dir
+
+    plan = Plan(
+        title="Test", total_duration=10,
+        scenes=[
+            Scene(id="hook", duration=5, narration="Hello", visual="A sunset"),
+            Scene(id="main", duration=5, narration="World", visual="A forest"),
+        ],
+    )
+
+    mock_llm = MagicMock()
+    mock_llm.generate.return_value = '```tsx\nexport default function S() { return <div />; }\n```'
+    mock_tts = MagicMock()
+    mock_tts.synthesize.return_value = MagicMock(duration=3.0)
+    mock_image = _make_fake_image_provider()
+
+    (tmp_path / "work" / "public" / "audio").mkdir(parents=True)
+    (tmp_path / "work" / "src" / "scenes").mkdir(parents=True)
+
+    providers = {"llm": mock_llm, "tts": mock_tts, "image": mock_image}
+    assets = fmt.generate_assets(plan, providers, tmp_path / "work")
+
+    # Both scenes have images
+    assert "hook" in assets["scene_images"]
+    assert "main" in assets["scene_images"]
+    # AI only generated for "main" (hook was user-provided)
+    assert mock_image.generate.call_count == 1

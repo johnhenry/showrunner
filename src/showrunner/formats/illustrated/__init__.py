@@ -22,12 +22,10 @@ class IllustratedFormat(Format):
         return generate_plan(topic, style=style, llm=llm, config=config)
 
     def generate_assets(self, plan: Plan, providers: dict, work_dir: Path) -> dict:
-        image = providers["image"]
-
         aspect_ratio = getattr(self, "_aspect_ratio", "1:1")
         parallel = getattr(self, "_parallel", False)
+        user_images_dir = getattr(self, "_images_dir", None)
 
-        # Map aspect ratios to image sizes
         size_map = {
             "1:1": "1024x1024",
             "9:16": "1024x1536",
@@ -35,12 +33,25 @@ class IllustratedFormat(Format):
             "4:5": "1024x1280",
         }
         size = size_map.get(aspect_ratio, "1024x1024")
-
         images_dir = work_dir / "images"
-        images = generate_all_images(
-            plan, image=image, output_dir=images_dir,
-            size=size, aspect_ratio=aspect_ratio, parallel=parallel,
-        )
+
+        # Load user-provided images first
+        images = {}
+        if user_images_dir:
+            from showrunner.images import load_user_images
+            images = load_user_images(user_images_dir, plan, images_dir)
+            print(f"  Matched {len(images)}/{len(plan.scenes)} scenes to user images")
+
+        # AI-generate for any unmatched scenes
+        if "image" in providers:
+            unmatched = [s for s in plan.scenes if s.id not in images]
+            if unmatched:
+                sub_plan = Plan(title=plan.title, total_duration=0, scenes=unmatched)
+                ai_images = generate_all_images(
+                    sub_plan, image=providers["image"], output_dir=images_dir,
+                    size=size, aspect_ratio=aspect_ratio, parallel=parallel,
+                )
+                images.update(ai_images)
 
         return {
             "images": images,

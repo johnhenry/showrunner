@@ -42,6 +42,7 @@ class Pipeline:
         panels_per_page: int = 4,
         page_size: tuple[int, int] = (1200, 1600),
         with_images: bool = False,
+        images_dir: Path | None = None,
     ) -> Path | Plan:
         """Run the full pipeline."""
         registry = get_registry()
@@ -59,9 +60,9 @@ class Pipeline:
 
         # Resolve image provider — needed for illustrated format or --with-images
         image_name = self.config.providers.get("image")
-        if with_images and not image_name:
+        if with_images and not images_dir and not image_name:
             raise ValueError(
-                "Image provider required for --with-images. "
+                "Image provider required for --with-images without --images. "
                 "Set providers.image in .showrunner.yaml (openai, gemini, or ollama)"
             )
 
@@ -85,7 +86,8 @@ class Pipeline:
         fmt._text_overlay = text_overlay
         fmt._panels_per_page = panels_per_page
         fmt._page_size = page_size
-        fmt._with_images = with_images
+        fmt._with_images = with_images or images_dir is not None
+        fmt._images_dir = images_dir
 
         # Plan
         plan = fmt.plan(topic, resolved_style, self.config, providers["llm"])

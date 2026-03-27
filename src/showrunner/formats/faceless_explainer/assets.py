@@ -47,20 +47,28 @@ STYLE CONTEXT:
 Return ONLY the TSX code inside a single code fence. No explanations."""
 
 CODEGEN_IMAGE_ADDENDUM = """
-BACKGROUND IMAGE:
-This scene has an AI-generated background image available at: staticFile("images/{image_filename}")
-You MUST use it as a full-bleed background layer using Remotion's Img component:
+SCENE IMAGE AVAILABLE:
+An image is available for this scene at: staticFile("images/{image_filename}")
+Use Remotion's Img component to reference it: <Img src={{staticFile("images/{image_filename}")}} />
 
-<Img src={{staticFile("images/{image_filename}")}} style={{{{
-  position: "absolute", top: 0, left: 0, width: "100%", height: "100%", objectFit: "cover"
-}}}} />
+The "Visual description" below tells you HOW to use this image in the scene.
+Follow those instructions for placement, sizing, animation, and compositing.
 
-BUILD ON TOP of this image:
-- Layer animated text, data visualizations, or overlays ABOVE the background
-- Use semi-transparent dark overlays (rgba(0,0,0,0.4-0.7)) behind text for readability
-- Consider subtle Ken Burns motion: animate transform scale from 1.0 to 1.05 over the scene duration
-- Do NOT generate procedural backgrounds (solid colors, gradients) — the image IS the background
-- All text/graphics should have strong contrast against the image (text shadows, backdrop panels)
+Common patterns you can use:
+- Full-bleed background: position absolute, top/left 0, width/height 100%, objectFit "cover"
+- Inset/thumbnail: fixed size, positioned in a corner or region of the canvas
+- Ken Burns: animate transform scale from 1.0 to 1.05 over the scene duration
+- Reveal: animate clip-path or opacity to reveal the image progressively
+- Side-by-side: image on one half, text/graphics on the other
+
+If the visual description does NOT specify how to use the image, default to:
+- Full-bleed background with objectFit "cover"
+- Semi-transparent dark overlay (rgba(0,0,0,0.5)) for text readability
+- Subtle Ken Burns zoom (scale 1.0 → 1.05)
+
+IMPORTANT:
+- Do NOT generate procedural backgrounds when an image is available — use the image
+- Ensure strong contrast for any text overlaid on the image (text shadows, backdrop panels)
 """
 
 CODEGEN_USER_TEMPLATE = """Create a Remotion scene component.
